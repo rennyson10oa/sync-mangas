@@ -1,5 +1,5 @@
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Float
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Float, Boolean
 
 Base = declarative_base()
 
@@ -30,6 +30,7 @@ class Capitulo(Base):
     id = Column(Integer, primary_key=True, index=True)
     numero = Column(Float, nullable=False)
     titulo = Column(String, nullable=True)
+    baixado = Column(Boolean, nullable=False, default=False)
     
     manga_id = Column(Integer, ForeignKey("mangas.id"), nullable=False)
     
@@ -60,3 +61,9 @@ class CapituloProvedor(Base):
         UniqueConstraint("capitulo_id", "provedor_id", name="uq_capitulo_por_provedor"),
     )
     
+class Config(Base):
+    __tablename__ = "config"
+    
+    id = Column(Integer, primary_key=True)
+    chave = Column(String, unique=True)
+    valor = Column(String)
