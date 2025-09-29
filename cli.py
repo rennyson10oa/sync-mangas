@@ -28,6 +28,11 @@ def buscar(query: str):
     for r in resultados:
         print(f"[{r['id']}] {r['titulo']} ({r.get('autor')})")
 
-    
+@app.command()
+def listar():
+    """Listar mangas no banco"""
+    resultados = asyncio.run(buscar_mangas_no_banco(""))
+    for r in resultados:
+        print(f"[{r['id']}] {r['titulo']} ({r.get('autor')})")
 if __name__ == "__main__":
     app()

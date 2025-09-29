@@ -12,6 +12,8 @@ class MangaApp(App):
         yield Input(placeholder="Pesquisar manga...", id="search_input")
         yield Button("Buscar", id="search_button")
         
+        yield Button("Listar mangas", id="listar_button")
+        
         # Botão de sincronização
         yield Button("Sincronizar provedores", id="sync_button")
 
@@ -31,6 +33,9 @@ class MangaApp(App):
             query = self.query_one("#search_input").value
             results = await buscar_mangas_no_banco(query)
             print(results)
+        elif event.button.id == "listar_button":
+            results = await buscar_mangas_no_banco("")
+            
             
     async def atualizar_stats(self):
         stats_widget = self.query_one("#stats", Static)
