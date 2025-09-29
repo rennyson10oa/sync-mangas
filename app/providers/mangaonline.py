@@ -9,7 +9,6 @@ from app.db import async_session
 from app.models import Manga, Capitulo, CapituloProvedor, Provedor
 from app.core.base_provedor import BaseProvedor
 
-
 class MangaOnline(BaseProvedor):
     nome = "MangaOnline"
     url = "https://mangaonline.blog/"

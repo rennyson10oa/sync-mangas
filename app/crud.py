@@ -7,6 +7,7 @@ import asyncio
 from sqlalchemy import select, func
 from app.db import async_session
 from app.models import Provedor, Manga, Capitulo
+from app.core.base_provedor import BaseProvedor
 
 async def registrar_provedores():
     import app.providers
@@ -20,23 +21,25 @@ async def registrar_provedores():
                 
                 for attr in dir(mod):
                     obj = getattr(mod, attr)
-                    if isinstance(obj, type) and hasattr(obj, "nome") and obj.nome != "base":
-                        # Checa se o provedor já existe
-                        result = await session.execute(
-                            select(Provedor).where(Provedor.nome == obj.nome)
-                        )
-                        existing = result.scalar_one_or_none()
-                        
-                        if existing:
-                            # Já existe, ignora
-                            continue
-                        
-                        provedor = Provedor(
-                            nome=obj.nome,
-                            url=getattr(obj, "url", None),
-                            modulo=modulo
-                        )
-                        session.add(provedor)
+
+                    # Apenas subclasses concretas de BaseProvedor
+                    if isinstance(obj, type) and issubclass(obj, BaseProvedor) and obj is not BaseProvedor:
+                        with session.no_autoflush:
+                            # Verifica se já existe no banco
+                            result = await session.execute(
+                                select(Provedor).where(Provedor.modulo == modulo)
+                            )
+                            existing = result.scalar_one_or_none()
+                            if existing:
+                                continue
+
+                            # Adiciona o provedor
+                            provedor = Provedor(
+                                nome=obj.nome,  # já é string correta
+                                url=getattr(obj, "url", None),
+                                modulo=modulo
+                            )
+                            session.add(provedor)
                         
 async def buscar_mangas_no_banco(query: str):
     """
