@@ -1,6 +1,3 @@
-import re
-import os
-import asyncio
 from sqlalchemy.future import select
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
@@ -69,7 +66,7 @@ class MangaOnline(BaseProvedor):
         return mangas
 
     async def baixar_mangas(self, manga_id):
-        pass
+        raise NotImplementedError
     
     async def get_chapters(self, url: str) -> list:
         if self.session is None:

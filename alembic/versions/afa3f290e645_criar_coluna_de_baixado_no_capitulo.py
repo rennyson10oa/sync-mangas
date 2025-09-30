@@ -21,7 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column(
         'capitulos',
-        sa.Column('baixado', sa.Boolean(), nullable=False, default=False)
+        sa.Column('baixado', sa.Boolean(), nullable=False, default=False, server_default=sa.false())
     )
     pass
 
