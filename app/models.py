@@ -19,10 +19,15 @@ class Manga(Base):
     id = Column(Integer, primary_key=True, index=True)
     titulo = Column(String, unique=True, nullable=False)
     alter_title = Column(String, nullable=True)
+    tipo = Column(String, nullable=True)
     autor = Column(String, nullable=True)
     descricao = Column(String, nullable=True)
+    status = Column(String, nullable=True)
+    thumbnail = Column(String, nullable=True)
+    avaliacao = Column(Float, nullable=True)
     
     capitulos = relationship("Capitulo", back_populates="manga")
+    tag = relationship("Tags", back_populates="manga")
     
 class Capitulo(Base):
     __tablename__ = "capitulos"
@@ -67,3 +72,10 @@ class Config(Base):
     id = Column(Integer, primary_key=True)
     chave = Column(String, unique=True)
     valor = Column(String)
+    
+class Tags(Base):
+    __tablename__ = "tags"
+    
+    id = Column(Integer, primary_key=True)
+    manga_id = Column(Integer, ForeignKey("mangas.id"), nullable=False)
+    tag = Column(String, nullable=False)

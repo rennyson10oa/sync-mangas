@@ -1,3 +1,5 @@
+import re
+import asyncio
 from sqlalchemy.future import select
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
@@ -73,36 +75,68 @@ class MangaOnline(BaseProvedor):
             await self.criar_sessao()
 
         chapters = []
+        infos = []
 
-        # monta a URL AJAX
-        if url.endswith("/"):
-            ajax_url = url + "ajax/chapters/"
-        else:
-            ajax_url = url + "/ajax/chapters/"
-
-        print(f"[*] Carregando capítulos via AJAX: {ajax_url}")
+        print(f"[*] Carregando capítulos pela url: {url}")
 
         try:
-            response = await self.session.post(ajax_url, headers={
+            response = await self.session.get(url, headers={
                 "User-Agent": "Mozilla/5.0",
                 "X-Requested-With": "XMLHttpRequest"
             })
         except Exception as e:
-            print(f"[!] Erro ao acessar {ajax_url}: {e}")
+            print(f"[!] Erro ao acessar {url}: {e}")
             return chapters
 
         if response.status_code != 200 or not response.text.strip():
-            print(f"[!] Resposta vazia ou erro {response.status_code} em {ajax_url}")
+            print(f"[!] Resposta vazia ou erro {response.status_code} em {url}")
             return chapters
 
         soup = BeautifulSoup(response.text, "html.parser")
-        links = soup.select("li a")
+        
+        # --- infos do manga ---
+        post_infos = soup.select(".post-content_item")
+        post_rating, post_alternative, post_type, post_status = "", "", "", ""
+        
+        for info in post_infos:
+            heading = info.select_one(".summary-heading")
+            if not heading:
+                continue  # se não encontrar, pula
 
-        print(f"[*] Links de capítulos encontrados: {len(links)}")
+            tipo = heading.get_text(strip=True)
 
-        for link in links:
-            href = link.get("href")
-            text = link.get_text(strip=True)
+            match tipo:
+                case "Rating":
+                    post_rating = info.select_one(".summary-content.vote-details").get_text(strip=True)
+                    match = re.search(r"([\d.]+)\s*/\s*5", post_rating)
+                    if match:
+                        post_rating = match.group(1)  # só o número (ex.: "4.3")
+                    else:
+                        post_rating = post_rating
+                case "Alternative":
+                    post_alternative = info.select_one(".summary-content").get_text(strip=True)
+                case "Type":
+                    post_type = info.select_one(".summary-content").get_text(strip=True)
+                case "Status":
+                    post_status = info.select_one(".summary-content").get_text(strip=True)
+    
+        infos.append({
+            "avaliacao": post_rating,
+            "alter_name": post_alternative,
+            "tipo": post_type,
+            "status": post_status,
+        })
+        
+        # --- capítulos ---
+        caps = soup.select(".main.version-chap.no-volumn li")
+
+        print(f"[*] Links de capítulos encontrados: {len(caps)}")
+
+        for cap in caps:
+            
+            infos_cap = cap.select_one("a")
+            href = infos_cap.get("href")
+            text = infos_cap.get_text(strip=True)
             
             if not href or not text:
                 continue
@@ -123,8 +157,10 @@ class MangaOnline(BaseProvedor):
         chapters = sorted(chapters, key=lambda x: x["numero"] if x["numero"] else 0)
 
         print(f"[*] Total de capítulos extraídos: {len(chapters)}")
-        return chapters
-
+        return {
+            "infos": infos[0] if infos else {},
+            "chapters": chapters
+        }
 
 
     async def sincronizar_mangas(self):
@@ -200,3 +236,17 @@ class MangaOnline(BaseProvedor):
             await session.commit()
             
         print(f"[✓] Sincronização de {self.nome} concluída!")
+
+    async def baixar_mangas(self, manga_id):
+        """
+        Baixa os capítulos do manga informado.
+        Deve ser sobrescrito por cada provedor.
+        """
+        raise NotImplementedError
+    
+async def main():
+    teste = await MangaOnline().get_chapters('https://mangaonline.blog/manga/demon-slayer-kimetsu-no-yaiba-manga-pt-br/')
+    print(teste)
+    
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -117,7 +117,7 @@ class BaseProvedor:
             
         print(f"[✓] Sincronização de {self.nome} concluída!")
 
-    async def baixar_mangas(self, manga_id):
+    async def baixar_mangas(self, manga_id: int):
         """
         Baixa os capítulos do manga informado.
         Deve ser sobrescrito por cada provedor.
