@@ -100,14 +100,15 @@ class MangaBR(BaseProvedor):
         print(f"[*] Links de capítulos encontrados: {len(links)}")
         
         for link in links:
-            href = self.url + link.get("href")
+            href = self.url.rstrip("/") + link.get("href")
 
             # pega só o <h5> dentro do <a>
             h5 = link.find("h5")
             if not h5:
                 continue
             
-            text = h5.get_text(strip=True)  # agora só o título/num do capítulo
+            text_parts = [t.strip() for t in h5.find_all(string=True, recursive=False) if t.strip()]
+            text = " ".join(text_parts)  # ex: "Capítulo 281"
             
             if not href or not text:
                 continue
@@ -130,10 +131,27 @@ class MangaBR(BaseProvedor):
         print(f"[*] Total de capítulos extraídos: {len(chapters)}")
         return chapters
 
+    async def parse_chapter(self, text: str) -> tuple[int | float | None, str]:
+        """
+        Retorna (numero, titulo limpo)
+        """
+        # remove quebras de linha e espaços extras
+        cleaned = " ".join(text.split())
 
+        # tenta extrair número
+        m = re.search(r'[Cc]ap[ií]tulo\s+(\d+(?:\.\d+)?)', cleaned)
+        if m:
+            numero_str = m.group(1)
+            numero = float(numero_str) if '.' in numero_str else int(numero_str)
+            titulo = f"Capítulo {numero_str}"
+        else:
+            numero = None
+            titulo = cleaned  # se não achar número, devolve o texto limpo
+
+        return numero, titulo
+    
     async def sincronizar_mangas(self):
-        """Busca mangas novos e capítulos novos, e atualiza o banco."""
-        raise NotImplementedError
+        return await super().sincronizar_mangas()
 
     async def baixar_mangas(self, manga_id):
         """
@@ -141,11 +159,3 @@ class MangaBR(BaseProvedor):
         Deve ser sobrescrito por cada provedor.
         """
         raise NotImplementedError
-
-async def test():
-    mangabr = MangaBR()
-    resultado = await mangabr.get_chapters('https://mangabr.org/manga/unordinary')
-    print(resultado)
-
-if __name__ == "__main__":
-    asyncio.run(test())
