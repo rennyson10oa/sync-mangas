@@ -1,7 +1,6 @@
 from textual.app import App, ComposeResult
 from textual.widgets import Button, Input, Static, Checkbox
 from app.crud import buscar_mangas_no_banco, sincronizar_provedores, obter_estatisticas
-
 class MangaApp(App):
     CSS_PATH = "styles.css"
     

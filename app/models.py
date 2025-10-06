@@ -1,7 +1,14 @@
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Float, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Float, Boolean, Table
 
 Base = declarative_base()
+
+manga_tags = Table(
+    "manga_tags",
+    Base.metadata,
+    Column("manga_id", ForeignKey("mangas.id"), primary_key=True),
+    Column("tag_id", ForeignKey("tags.id"), primary_key=True),
+)
 
 class Provedor(Base):
     __tablename__ = "provedores"
@@ -27,7 +34,7 @@ class Manga(Base):
     avaliacao = Column(Float, nullable=True)
     
     capitulos = relationship("Capitulo", back_populates="manga")
-    tag = relationship("Tags", back_populates="manga")
+    tags = relationship("Tag", secondary=manga_tags, back_populates="mangas")
     
 class Capitulo(Base):
     __tablename__ = "capitulos"
@@ -73,9 +80,11 @@ class Config(Base):
     chave = Column(String, unique=True)
     valor = Column(String)
     
-class Tags(Base):
+class Tag(Base):
     __tablename__ = "tags"
     
     id = Column(Integer, primary_key=True)
     manga_id = Column(Integer, ForeignKey("mangas.id"), nullable=False)
     tag = Column(String, nullable=False)
+    
+    mangas = relationship("Manga", secondary=manga_tags, back_populates="tags")

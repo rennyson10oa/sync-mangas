@@ -2,7 +2,7 @@ import re
 import asyncio
 from sqlalchemy.future import select
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, quote
 
 from app.db import async_session
 from app.models import Manga, Capitulo, CapituloProvedor, Provedor
@@ -13,17 +13,24 @@ class MangaOnline(BaseProvedor):
     url = "https://mangaonline.blog/"
 
     async def buscar_mangas(self, termo=""):
+        # guarranted that the provider is initialized
+        await self.ensure_init()
         if self.session is None:
             await self.criar_sessao()
 
-        url_pesquisa = self.url + "?s=" + urlparse.quote(termo)
-        response = await self.session.get(url_pesquisa)
-
-        if response.status_code == 200:
-            return response.text
-        return ""
+        url_pesquisa = self.url + "?s=" + quote(termo)
+        async with self.semaphore:
+            async with self.session.get(url_pesquisa) as response:  # usa async with aqui também
+                if response.status == 200:
+                    html = await response.text()  # <- aqui o await
+                    return html
+                else:
+                    self.logger.warning(f"Falha ao buscar '{termo}' ({response.status})")
+                    return None
 
     async def get_all_mangas(self):
+        # guarranted that the provider is initialized
+        await self.ensure_init()
         if self.session is None:
             await self.criar_sessao()
 
@@ -36,25 +43,28 @@ class MangaOnline(BaseProvedor):
             else:
                 url_pesquisa = self.url.rstrip("/") + f"/manga/page/{page}/"
 
-            print(f"[*] Buscando página {page}: {url_pesquisa}")
+            self.logger.info(f"[*] Buscando página {page}: {url_pesquisa}")
 
             try:
-                response = await self.session.get(url_pesquisa)
+                async with self.semaphore:
+                    response = await self.session.get(url_pesquisa)
             except Exception as e:
-                print(f"[!] Erro ao acessar {url_pesquisa}: {e}")
+                self.logger.error(f"[!] Erro ao acessar {url_pesquisa}: {e}")
+                break
+            
+            html = (await response.text()).strip()
+
+            if response.status != 200 or not html:
+                self.logger.info(f"[!] Página {page} não encontrada ou vazia. Encerrando.")
                 break
 
-            if response.status_code != 200 or not response.text.strip():
-                print(f"[!] Página {page} não encontrada ou vazia. Encerrando.")
-                break
-
-            soup = BeautifulSoup(response.text, "html.parser")
+            soup = BeautifulSoup(html, "html.parser")
 
             # Corrigido: seletor CSS precisa do ponto
             links = soup.select(".post-title a")
 
             if not links:
-                print(f"[✓] Nenhum mangá encontrado na página {page}. Encerrando.")
+                self.logger.info(f"[✓] Nenhum mangá encontrado na página {page}. Encerrando.")
                 break
 
             for link in links:
@@ -71,28 +81,33 @@ class MangaOnline(BaseProvedor):
         raise NotImplementedError
     
     async def get_chapters(self, url: str) -> list:
+        # guarranted that the provider is initialized
+        await self.ensure_init()
         if self.session is None:
             await self.criar_sessao()
 
         chapters = []
         infos = []
 
-        print(f"[*] Carregando capítulos pela url: {url}")
+        self.logger.info(f"[*] Buscando capítulos pela url: {url}")
 
         try:
-            response = await self.session.get(url, headers={
-                "User-Agent": "Mozilla/5.0",
-                "X-Requested-With": "XMLHttpRequest"
-            })
+            async with self.semaphore:
+                response = await self.session.get(url, headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "X-Requested-With": "XMLHttpRequest"
+                })
         except Exception as e:
-            print(f"[!] Erro ao acessar {url}: {e}")
+            self.logger.error(f"[!] Erro ao acessar {url}: {e}")
+            return chapters
+        
+        html = (await response.text()).strip()
+
+        if response.status != 200 or not html:
+            self.logger.error(f"[!] Resposta vazia ou erro {response.status} em {url}")
             return chapters
 
-        if response.status_code != 200 or not response.text.strip():
-            print(f"[!] Resposta vazia ou erro {response.status_code} em {url}")
-            return chapters
-
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = BeautifulSoup(html, "html.parser")
         
         # --- infos do manga ---
         post_infos = soup.select(".post-content_item")
@@ -110,9 +125,12 @@ class MangaOnline(BaseProvedor):
                     post_rating = info.select_one(".summary-content.vote-details").get_text(strip=True)
                     match = re.search(r"([\d.]+)\s*/\s*5", post_rating)
                     if match:
-                        post_rating = match.group(1)  # só o número (ex.: "4.3")
+                        post_rating = float(match.group(1))  # só o número (ex.: "4.3")
                     else:
-                        post_rating = post_rating
+                        try:
+                            post_rating = float(post_rating)
+                        except ValueError:
+                            post_rating = None  # fallback se não for numérico
                 case "Alternative":
                     post_alternative = info.select_one(".summary-content").get_text(strip=True)
                 case "Type":
@@ -130,6 +148,7 @@ class MangaOnline(BaseProvedor):
         # --- capítulos ---
         caps = soup.select(".main.version-chap.no-volumn li")
 
+        self.logger.info(f"[*] Capítulos encontrados: {len(caps)}")
         print(f"[*] Links de capítulos encontrados: {len(caps)}")
 
         for cap in caps:
@@ -144,7 +163,7 @@ class MangaOnline(BaseProvedor):
             numero, titulo = await self.parse_chapter(text)
             
             if numero is None:
-                print(f"[!] Capítulo sem número detectado: '{titulo}' — pulando...")
+                self.logger.warning(f"[!] Capítulo sem número detectado: '{titulo}' — pulando...")
                 continue  # ou numero = 0 se quiser inserir mesmo assim
 
             chapters.append({
@@ -156,7 +175,7 @@ class MangaOnline(BaseProvedor):
         # ordena capítulos por número
         chapters = sorted(chapters, key=lambda x: x["numero"] if x["numero"] else 0)
 
-        print(f"[*] Total de capítulos extraídos: {len(chapters)}")
+        self.logger.info(f"[*] Total de capítulos extraídos: {len(chapters)}")
         return {
             "infos": infos[0] if infos else {},
             "chapters": chapters
@@ -164,7 +183,9 @@ class MangaOnline(BaseProvedor):
 
 
     async def sincronizar_mangas(self):
-        print(f"[*] Sincronizando mangás do provedor {self.nome}")
+        # guarranted that the provider is initialized
+        await self.ensure_init()
+        self.logger.info(f"[*] Sincronizando mangás do provedor {self.nome}")
         
         # pega a lista de todos os mangas do server
         mangas = await self.get_all_mangas()
@@ -200,13 +221,14 @@ class MangaOnline(BaseProvedor):
                 # pega capitulos novos do provedor
                 capitulos = await self.get_chapters(m["url"])
                 
-                if len(capitulos) == len(caps_existentes):
-                    print(f"[-] Mangá '{titulo}' já sincronizado.")
+                if len(capitulos["chapters"]) == len(caps_existentes):
+                    self.logger.info(f"[*] Mangá '{titulo}' sincronizado com sucesso.")
                     continue
                 
+                # Lida com os capítulos
                 #adiciona caps que não existem
                 novos = 0
-                for cap in capitulos:
+                for cap in capitulos["chapters"]:
                     if cap["numero"] not in caps_existentes_dict:
                         novo_cap = Capitulo(
                             manga_id=manga_db.id,
@@ -227,14 +249,21 @@ class MangaOnline(BaseProvedor):
                         session.add(cap_prov)
                         novos += 1
                     else:
-                        print(f"[!] Capítulo {cap['numero']} já existente em '{titulo}', ignorado.")
+                        self.logger.info(f"[!] Capítulo {cap['numero']} já existente em '{titulo}'.")
 
-                        
+                # atualiza as informações do manga
+                if (capitulos["infos"]):
+                    infos = capitulos["infos"]
+                    manga_db.avaliacao = infos["avaliacao"]
+                    manga_db.alter_title = infos["alter_name"]
+                    manga_db.tipo = infos["tipo"]
+                    manga_db.status = infos["status"]
                 if novos > 0:
-                    print(f"[+] Mangá '{titulo}': {novos} capítulos adicionados.")
+                    self.logger.info(f"[*] Mangá '{titulo}': {novos} capítulos adicionados.")
                     
             await session.commit()
-            
+        
+        self.logger.info(f"[*] Sincronização de mangas do provedor {self.nome} concluida.")
         print(f"[✓] Sincronização de {self.nome} concluída!")
 
     async def baixar_mangas(self, manga_id):
@@ -245,8 +274,9 @@ class MangaOnline(BaseProvedor):
         raise NotImplementedError
     
 async def main():
-    teste = await MangaOnline().get_chapters('https://mangaonline.blog/manga/demon-slayer-kimetsu-no-yaiba-manga-pt-br/')
-    print(teste)
+    await MangaOnline().init()
+    resp = await MangaOnline().get_all_mangas()
+    print(resp)
     
 if __name__ == "__main__":
     asyncio.run(main())

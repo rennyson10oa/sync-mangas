@@ -1,13 +1,14 @@
-from typing import Optional, List, Tuple
 import importlib
 import pkgutil
 import inspect
 import asyncio
+from typing import Optional, List, Tuple
 
 from sqlalchemy import select, func
 from app.db import async_session
 from app.models import Provedor, Manga, Capitulo
 from app.core.base_provedor import BaseProvedor
+from app.core.config_manager import ConfigManager
 
 async def registrar_provedores():
     import app.providers
@@ -83,48 +84,54 @@ async def sincronizar_provedores(provedores: Optional[List[str]] = None):
     if provedores:
         db_provedores = [p for p in db_provedores if p.nome in provedores]
 
-    for p in db_provedores:
-        # importa o módulo do provedor dinamicamente
-        try:
-            mod = importlib.import_module(p.modulo)
-        except Exception as e:
-            # falha ao importar módulo: pula e segue
-            print(f"[warn] não foi possível importar {p.modulo}: {e}")
-            continue
+    concurrency_limit = await int(ConfigManager.get("concurrency", 3))
+    semaphore = asyncio.Semaphore(concurrency_limit)
+    
+    async def run_provedor(p: Provedor):
+        async with semaphore:
+            try:
+                mod = importlib.import_module(p.modulo)
+                
+                cls = None
+                for attr in dir(mod):
+                    obj = getattr(mod, attr)
+                    if isinstance(obj, type) and getattr(obj, "nome", None) == p.nome:
+                        cls = obj
+                        break
+                    
+                if cls in None:
+                    print(f"[warn] classe do provedor {p.nome} não encontrada em {p.modulo}")
+                    return
+                
+                instance = cls()
+                
+                sync_fn = getattr(instance, "sincronizar_mangas", None)
+                if sync_fn is None:
+                    print(f"[warn] provedor {p.nome} não implementa sincronizar_mangas()")
+                    return
+                
+                print(f"[*] Iniciando provedor: {p.nome}")
+                
+                if inspect.iscoroutinefunction(sync_fn):
+                    await sync_fn()
+                else:
+                    maybe = sync_fn()
+                    if asyncio.iscoroutine(maybe):
+                        await maybe
+                        
+                print(f"[✓] Finalizado provedor: {p.nome}")
+                
+            except Exception as e:
+                print(f"[error] erro sincronizando {p.nome}: {e}")
+    
+    # cria tasks para todos os provedores        
+    tasks = [asyncio.create_task(run_provedor(p)) for p in db_provedores]
 
-        # encontra a classe dentro do módulo cuja .nome bate com p.nome
-        cls = None
-        for attr in dir(mod):
-            obj = getattr(mod, attr)
-            if isinstance(obj, type) and getattr(obj, "nome", None) == p.nome:
-                cls = obj
-                break
-
-        if cls is None:
-            print(f"[warn] classe do provedor {p.nome} não encontrada em {p.modulo}")
-            continue
-
-        instance = cls()  # instancia o provedor
-
-        sync_fn = getattr(instance, "sincronizar_mangas", None)
-        if sync_fn is None:
-            print(f"[warn] provedor {p.nome} não implementa sincronizar_mangas()")
-            continue
-
-        try:
-            # se for função async definida com "async def"
-            if inspect.iscoroutinefunction(sync_fn):
-                await sync_fn()
-            else:
-                # pode ser função sync; se retornar coroutine, await também
-                maybe = sync_fn()
-                if asyncio.iscoroutine(maybe):
-                    await maybe
-        except Exception as e:
-            print(f"[error] erro sincronizando {p.nome}: {e}")
-            # não interrompe a sincronização dos outros provedores
-            continue
-
+    # aguarda todos terminarem
+    await asyncio.gather(*tasks, return_exceptions=True)
+    
+    print("[✓] Sincronização concluída!")
+    
 async def obter_estatisticas() -> Tuple[int, int, int]:
     """
     Retorna (n_provedores, n_mangas, n_capitulos) como ints.
@@ -135,3 +142,7 @@ async def obter_estatisticas() -> Tuple[int, int, int]:
         mangas = await session.scalar(select(func.count(Manga.id)))
         caps = await session.scalar(select(func.count(Capitulo.id)))
         return int(provs or 0), int(mangas or 0), int(caps or 0)
+    
+async def set_config_in_db(Key: str, Value: str):
+    async with async_session() as session:
+        await ConfigManager.set(session, Key, Value)

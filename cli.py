@@ -2,7 +2,8 @@ import os
 import typer
 import asyncio
 from pathlib import Path
-from app.crud import registrar_provedores, sincronizar_provedores, obter_estatisticas, buscar_mangas_no_banco
+from app.crud import set_config_in_db, registrar_provedores, sincronizar_provedores, obter_estatisticas, buscar_mangas_no_banco
+from app.core.config_manager import ConfigManager
 
 app = typer.Typer()
 
@@ -76,6 +77,12 @@ def novo_provedor(nome: str):
     typer.echo("⚠️ Registrando ele no banco...")
     registrar()
     typer.echo("✅ Registrado com sucesso!")
+    
+@app.command()
+def set_config(key: str, value: str):
+    asyncio.run(set_config_in_db(key, value))
+    
+    print("Configuração alterada com sucesso!")
     
 if __name__ == "__main__":
     app()

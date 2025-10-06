@@ -1,21 +1,78 @@
-from sqlalchemy.future import select
-from httpx import AsyncClient
+import logging
+import os
 import re
+import random
+import time
+import asyncio
+import aiohttp
+from sqlalchemy.future import select
+from concurrent.futures import ProcessPoolExecutor
+from typing import Optional, List, Tuple, Dict, Any
 
 from app.db import async_session
 from app.models import Manga, Capitulo, CapituloProvedor, Provedor
+from app.core.config_manager import ConfigManager
+
+# --- função de logging basico (cria um loggin por provider)---
+async def get_provider_logger(name: str) -> logging.Logger:
+    logger = logging.getLogger(f"prov:{name}")
+    if logger.handlers:
+        return logger
+    
+    logger.setLevel(logging.INFO)
+    fmt = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
+    
+    log_dir = await ConfigManager.get("log_dir")
+    if not log_dir:
+        print("[!] log_dir não encontrado nas configs, usando ./logs")
+        log_dir = "./logs" # default fallback if config is not set
+        
+    # guarrante that the log dir exists
+    os.makedirs(log_dir, exist_ok=True)
+    print(f"[*] Log dir: {log_dir}")
+    
+    fh = logging.FileHandler(f"{log_dir}/{name}.log", encoding="utf-8")
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+    
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    logger.addHandler(sh)
+    
+    return logger
 
 class BaseProvedor:
-    nome = str
-    url = str
-    session: AsyncClient | None = None
+    nome: str = ""
+    url: str = ""
+    session: aiohttp.ClientSession | None = None
+    logger: logging.Logger = None
+    semaphore: asyncio.Semaphore
+    _initialized: bool = False
+    
+    def __init__(self, concurrency: int = 5):
+        if not getattr(self, "nome", None) or not getattr(self, "url", None):
+            raise ValueError(f"{self.__class__.__name__} precisa definir nome e url")
+        
+        self._initialized = False
+        self.logger = None
+        self.session: aiohttp.ClientSession | None = None
+        self.semaphore: asyncio.Semaphore = asyncio.Semaphore(concurrency)
+
+    async def init(self):
+        if self._initialized:
+            return
+        self.logger = await get_provider_logger(self.nome)
+        self._initialized = True
+        
+    async def ensure_init(self):
+        if not self._initialized:
+            await self.init()
         
     async def criar_sessao(self):
-        """
-        cria um sessão HTTP por padrão
-        Pode ser sobrescrito por provedores que necessitam passar por cloudflare, login, etc.
-        """
-        self.session = AsyncClient(follow_redirects=True, timeout=30)
+        if not self.session:
+            timeout = aiohttp.ClientTimeout(total=30)
+            connector = aiohttp.TCPConnector(limit=20)  # limite de conexões abertas por provider
+            self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         return self.session
     
     async def buscar_mangas(self, query: str) -> list:
@@ -43,8 +100,11 @@ class BaseProvedor:
         raise NotImplementedError
 
     async def sincronizar_mangas(self):
+        # guarranted that the provider is initialized
+        await self.ensure_init()
         """Busca mangas novos e capítulos novos, e atualiza o banco."""
         print(f"[*] Sincronizando mangás do provedor {self.nome}")
+        self.logger.info(f"[*] Sincronizando mangás do provedor {self.nome}")
         
         # pega a lista de todos os mangas do server
         mangas = await self.get_all_mangas()
@@ -81,7 +141,7 @@ class BaseProvedor:
                 capitulos = await self.get_chapters(m["url"])
                 
                 if len(capitulos) == len(caps_existentes):
-                    print(f"[-] Mangá '{titulo}' já sincronizado.")
+                    self.logger.info(f"[*] Mangá '{titulo}' já sincronizado.")
                     continue
                 
                 #adiciona caps que não existem
@@ -107,14 +167,14 @@ class BaseProvedor:
                         session.add(cap_prov)
                         novos += 1
                     else:
-                        print(f"[!] Capítulo {cap['numero']} já existente em '{titulo}', ignorado.")
+                        self.logger.info(f"[!] Capítulo {cap['numero']} já existente em '{titulo}', ignorado.")
 
-                        
                 if novos > 0:
-                    print(f"[+] Mangá '{titulo}': {novos} capítulos adicionados.")
+                    self.logger.info(f"[+] Mangá '{titulo}': {novos} capítulos adicionados.")
                     
             await session.commit()
             
+        self.logger.info(f"[*] Sincronização de {self.nome} concluída!")
         print(f"[✓] Sincronização de {self.nome} concluída!")
 
     async def baixar_mangas(self, manga_id: int):
