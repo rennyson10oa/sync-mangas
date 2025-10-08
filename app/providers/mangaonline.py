@@ -13,8 +13,6 @@ class MangaOnline(BaseProvedor):
     url = "https://mangaonline.blog/"
 
     async def buscar_mangas(self, termo=""):
-        # guarranted that the provider is initialized
-        await self.ensure_init()
         if self.session is None:
             await self.criar_sessao()
 
@@ -22,15 +20,13 @@ class MangaOnline(BaseProvedor):
         async with self.semaphore:
             async with self.session.get(url_pesquisa) as response:  # usa async with aqui também
                 if response.status == 200:
-                    html = await response.text()  # <- aqui o await
+                    html = await response.text()
                     return html
                 else:
                     self.logger.warning(f"Falha ao buscar '{termo}' ({response.status})")
                     return None
 
     async def get_all_mangas(self):
-        # guarranted that the provider is initialized
-        await self.ensure_init()
         if self.session is None:
             await self.criar_sessao()
 
@@ -81,8 +77,6 @@ class MangaOnline(BaseProvedor):
         raise NotImplementedError
     
     async def get_chapters(self, url: str) -> list:
-        # guarranted that the provider is initialized
-        await self.ensure_init()
         if self.session is None:
             await self.criar_sessao()
 
@@ -183,8 +177,6 @@ class MangaOnline(BaseProvedor):
 
 
     async def sincronizar_mangas(self):
-        # guarranted that the provider is initialized
-        await self.ensure_init()
         self.logger.info(f"[*] Sincronizando mangás do provedor {self.nome}")
         
         # pega a lista de todos os mangas do server
@@ -272,11 +264,3 @@ class MangaOnline(BaseProvedor):
         Deve ser sobrescrito por cada provedor.
         """
         raise NotImplementedError
-    
-async def main():
-    await MangaOnline().init()
-    resp = await MangaOnline().get_all_mangas()
-    print(resp)
-    
-if __name__ == "__main__":
-    asyncio.run(main())

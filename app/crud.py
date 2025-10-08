@@ -84,7 +84,7 @@ async def sincronizar_provedores(provedores: Optional[List[str]] = None):
     if provedores:
         db_provedores = [p for p in db_provedores if p.nome in provedores]
 
-    concurrency_limit = await int(ConfigManager.get("concurrency", 3))
+    concurrency_limit = int(await ConfigManager.get("concurrency", 3))
     semaphore = asyncio.Semaphore(concurrency_limit)
     
     async def run_provedor(p: Provedor):
@@ -99,25 +99,25 @@ async def sincronizar_provedores(provedores: Optional[List[str]] = None):
                         cls = obj
                         break
                     
-                if cls in None:
+                if cls is None:
                     print(f"[warn] classe do provedor {p.nome} não encontrada em {p.modulo}")
-                    return
-                
-                instance = cls()
-                
-                sync_fn = getattr(instance, "sincronizar_mangas", None)
-                if sync_fn is None:
-                    print(f"[warn] provedor {p.nome} não implementa sincronizar_mangas()")
                     return
                 
                 print(f"[*] Iniciando provedor: {p.nome}")
                 
-                if inspect.iscoroutinefunction(sync_fn):
-                    await sync_fn()
-                else:
-                    maybe = sync_fn()
-                    if asyncio.iscoroutine(maybe):
-                        await maybe
+                async with cls() as instance:
+                    
+                    sync_fn = getattr(instance, "sincronizar_mangas", None)
+                    if sync_fn is None:
+                        print(f"[warn] provedor {p.nome} não implementa sincronizar_mangas()")
+                        return
+                    
+                    if inspect.iscoroutinefunction(sync_fn):
+                        await sync_fn()
+                    else:
+                        maybe = sync_fn()
+                        if asyncio.iscoroutine(maybe):
+                            await maybe
                         
                 print(f"[✓] Finalizado provedor: {p.nome}")
                 

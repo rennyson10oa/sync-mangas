@@ -943,6 +943,21 @@ test = ["appdirs (==1.4.4)", "covdefaults (>=2.3)", "pytest (>=8.3.4)", "pytest-
 type = ["mypy (>=1.14.1)"]
 
 [[package]]
+name = "prometheus-client"
+version = "0.23.1"
+description = "Python client for the Prometheus monitoring system."
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "prometheus_client-0.23.1-py3-none-any.whl", hash = "sha256:dd1913e6e76b59cfe44e7a4b83e01afc9873c1bdfd2ed8739f1e76aeca115f99"},
+    {file = "prometheus_client-0.23.1.tar.gz", hash = "sha256:6ae8f9081eaaaf153a2e959d2e6c4f4fb57b12ef76c8c7980202f1e57b48b2ce"},
+]
+
+[package.extras]
+twisted = ["twisted"]
+
+[[package]]
 name = "propcache"
 version = "0.3.2"
 description = "Accelerated property cache"
@@ -1483,4 +1498,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0.0"
-content-hash = "bfbbb705720abf1d2093999cb53f7f08d7a10fa632cc32f999ca4f02f037cda0"
+content-hash = "74c7613dd51312a9a655bbf1cb79272a2f5041fd8f23918ef7b6e378b5b2151f"

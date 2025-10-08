@@ -9,29 +9,25 @@ class MangaBR(BaseProvedor):
     url = "https://mangabr.org/"
     
     async def buscar_mangas(self, query: str) -> list:
-        # guarranted that the provider is initialized
-        await self.ensure_init()
         if self.session is None:
             await self.criar_sessao()
 
         url_pesquisa = self.url + "search?q=" + quote(query)
         async with self.semaphore:
-            response = await self.session.get(url_pesquisa)
-
-        if response.status == 200:
-            # Pega o texto da resposta
-            text = response.text()
-
-            # Desescapa Unicode e HTML
-            decoded_unicode = text.encode('utf-8').decode('unicode_escape')
-            final_html = html.unescape(decoded_unicode)
-            return final_html
-
-        return ""
+            async with self.session.get(url_pesquisa) as response:
+                if response.status == 200:
+                    # get the text of the response
+                    text = await response.text()
+                    
+                    # descapes Unicode and HTML 
+                    decoded_unicode = text.encode('utf-8').decode('unicode_escape')
+                    final_html = html.unescape(decoded_unicode)
+                    return final_html
+                else:
+                    self.logger.warning(f"Falha ao buscar '{query}' ({response.status})")
+                    return None
     
     async def get_all_mangas(self) -> list:
-        # guarranted that the provider is initialized
-        await self.ensure_init()
         if self.session is None:
             await self.criar_sessao()
 
@@ -51,12 +47,15 @@ class MangaBR(BaseProvedor):
             except Exception as e:
                 self.logger.error(f"[!] Erro ao acessar {url_pesquisa}: {e}")
                 break
+            
+            html_text = await response.text()
+            html_text.strip()
 
-            if response.status != 200 or not response.text().strip():
+            if response.status != 200 or not html_text:
                 self.logger.info(f"[!] Página {page} não encontrada ou vazia. Encerrando.")
                 break
 
-            soup = BeautifulSoup(response.text(), "html.parser")
+            soup = BeautifulSoup(html_text, "html.parser")
 
             # Corrigido: seletor CSS precisa do ponto
             links = soup.select(".series .justify-content-center .link-series")
@@ -79,8 +78,6 @@ class MangaBR(BaseProvedor):
         raise NotImplementedError
     
     async def get_chapters(self, url: str) -> list:
-        # guarranted that the provider is initialized
-        await self.ensure_init()
         
         if self.session is None:
             await self.criar_sessao()
@@ -99,11 +96,14 @@ class MangaBR(BaseProvedor):
             self.logger.error(f"[!] Erro ao acessar {url}: {e}")
             return chapters
         
-        if response.status != 200 or not response.text().strip():
+        html_text = await response.text()
+        html_text.strip()
+        
+        if response.status != 200 or not html_text:
             self.logger.error(f"[!] Resposta vazia ou erro {response.status} em {url}")
             return chapters
         
-        soup = BeautifulSoup(response.text(), "html.parser")
+        soup = BeautifulSoup(html_text, "html.parser")
         links = soup.select(".col-chapter a")
         
         self.logger.info(f"[*] Links de capítulos encontrados: {len(links)}")

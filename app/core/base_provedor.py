@@ -44,36 +44,40 @@ async def get_provider_logger(name: str) -> logging.Logger:
 class BaseProvedor:
     nome: str = ""
     url: str = ""
-    session: aiohttp.ClientSession | None = None
-    logger: logging.Logger = None
-    semaphore: asyncio.Semaphore
-    _initialized: bool = False
     
+    # function to initialize the provider
     def __init__(self, concurrency: int = 5):
-        if not getattr(self, "nome", None) or not getattr(self, "url", None):
+        if not self.nome or not self.url:
             raise ValueError(f"{self.__class__.__name__} precisa definir nome e url")
         
-        self._initialized = False
-        self.logger = None
-        self.session: aiohttp.ClientSession | None = None
-        self.semaphore: asyncio.Semaphore = asyncio.Semaphore(concurrency)
+        self.logger: Optional[logging.Logger] = None
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.semaphore = asyncio.Semaphore(concurrency)
+    
+    # --- Manages the lifecycle automatically ---
+    async def __aenter__(self):
+        await self.initialize()
+        return self
 
-    async def init(self):
-        if self._initialized:
-            return
-        self.logger = await get_provider_logger(self.nome)
-        self._initialized = True
-        
-    async def ensure_init(self):
-        if not self._initialized:
-            await self.init()
-        
-    async def criar_sessao(self):
-        if not self.session:
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.close()
+
+    # --- Initialize the provider ---
+    async def initialize(self):
+        if self.logger is None:
+            self.logger = await get_provider_logger(self.nome)
+        if self.session is None:
             timeout = aiohttp.ClientTimeout(total=30)
-            connector = aiohttp.TCPConnector(limit=20)  # limite de conexões abertas por provider
+            connector = aiohttp.TCPConnector(limit=20)
             self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
-        return self.session
+        
+    # --- Close the provider ---
+    async def close(self):
+        if self.session and not self.session.closed:
+            await self.session.close()
+            self.session = None
+            if self.logger:
+                self.logger.info("[*] Sessão fechada com sucesso.")
     
     async def buscar_mangas(self, query: str) -> list:
         """
@@ -100,8 +104,6 @@ class BaseProvedor:
         raise NotImplementedError
 
     async def sincronizar_mangas(self):
-        # guarranted that the provider is initialized
-        await self.ensure_init()
         """Busca mangas novos e capítulos novos, e atualiza o banco."""
         print(f"[*] Sincronizando mangás do provedor {self.nome}")
         self.logger.info(f"[*] Sincronizando mangás do provedor {self.nome}")

@@ -1,9 +1,7 @@
 import os
 import typer
 import asyncio
-from pathlib import Path
 from app.crud import set_config_in_db, registrar_provedores, sincronizar_provedores, obter_estatisticas, buscar_mangas_no_banco
-from app.core.config_manager import ConfigManager
 
 app = typer.Typer()
 

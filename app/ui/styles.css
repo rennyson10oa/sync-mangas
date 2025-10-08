@@ -1,0 +1,69 @@
+#stats {
+    text-align: center;
+    padding: 1;
+    color: cyan;
+    border-bottom: solid white;
+}
+
+#toolbar {
+    padding: 1;
+    dock: top;
+    height: 10;
+}
+
+#search_input {
+    width: 90%;
+}
+
+#provider_scroll {
+    height: 8;
+    overflow-x: auto;
+    border-bottom: solid white;
+    padding: 0; /* <--- remove padding interno do scroll */
+    margin: 0;
+}
+
+.prov_button {
+    border: solid white;
+    margin: 0; /* <--- elimina espaçamento externo */
+    color: white;
+    background: blue;
+    text-style: bold;
+    width: auto;
+    height: auto;
+}
+
+
+.prov_button.running {
+    color: black;
+    background: green;
+    text-style: bold;
+}
+
+#log_view {
+    padding: 1;
+    color: lightgreen;
+    overflow-y: auto;
+}
+
+.spin_small {
+    width: 1;
+    /* tamanho mínimo */
+    height: 1;
+    color: green;
+    offset-x: 0;
+    offset-y: 0;
+    padding: 0;
+}
+
+.hidden {
+    display: none;
+}
+
+#provider_list {
+    layout: horizontal;
+    padding: 1;
+    margin: 1;
+    height: auto;
+    width: auto;
+}
