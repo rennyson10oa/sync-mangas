@@ -2,10 +2,9 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Button, Input, Static, LoadingIndicator
 from textual.reactive import reactive
-from textual import events
+import threading
 import asyncio
 import logging
-from rich.spinner import Spinner
 from pathlib import Path
 from app.crud import buscar_mangas_no_banco, sincronizar_provedores, obter_estatisticas
 from app.services.metrics import start_metrics_server, active_workers, downloads_total, download_errors, downloads_in_progress
@@ -156,6 +155,10 @@ class MangaApp(App):
         stats_widget.update(f"Provedores: {provs} | Mangas: {mangas} | Capitulos: {caps}")
         
 if __name__ == "__main__":
-    asyncio.run(start_metrics_server(9090))
-    asyncio.run(worker_loop())
+    #roda o server do prometheus em outra thread
+    threading.Thread(target=start_metrics_server, args=(9090,), daemon=True).start()
+    
+    # roda todo o resto normalmente
+    threading.Thread(target=worker_loop, daemon=True).start()
+    
     MangaApp().run()

@@ -6,6 +6,6 @@ downloads_in_progress = Gauge("sync_downloads_in_progress", "Downloads em andame
 downloads_total = Counter("sync_downloads_total", "Total de downloads feitos")
 download_errors = Counter("sync_download_errors", "Total de erros de download")
 
-async def start_metrics_server(port=9090):
+def start_metrics_server(port=9090):
     """Inicia o servidor Prometheus local."""
     start_http_server(port)
